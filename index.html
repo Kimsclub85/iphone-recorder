@@ -4,32 +4,29 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="theme-color" content="#14161a">
+<meta name="theme-color" content="#000000">
 <title>예약 녹음기</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans+KR:wght@400;500;700&display=swap">
 <style>
-/* Layout: one narrow column, a big "next window" clock on top, controls, then the take list. */
+/* Layout: one narrow column, a big "next window" clock on top, controls, then the take list.
+   Dark-only on true black: the page runs all night on an OLED phone. */
 :root {
-  --bg: #f3f4f1;
-  --panel: #ffffff;
-  --line: #d9dcd4;
-  --fg: #1b1d1a;
-  --muted: #646a60;
-  --rec: #d23a2a;
-  --ok: #2f7d4f;
-  --warn: #a8670f;
-  --meter: #3e6f8f;
+  --bg: #000000;
+  --panel: #0b0c0e;
+  --line: #22252b;
+  --fg: #d6d9d3;
+  --muted: #7b8077;
+  --rec: #e0503f;
+  --ok: #4fae7c;
+  --warn: #d39a45;
+  --meter: #6aa5c9;
+  --night-fg: #3d3f3c;
+  --night-sub: #2c2e2b;
+  --night-rec: #6b2219;
   --font-body: "IBM Plex Sans KR", "Apple SD Gothic Neo", system-ui, sans-serif;
   --font-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
-  color-scheme: light;
-}
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #14161a; --panel: #1d2026; --line: #30343c; --fg: #e9ebe6; --muted: #959b91;
-    --rec: #ff5a45; --ok: #5cc08a; --warn: #e3a64a; --meter: #79b2d6;
-    color-scheme: dark;
-  }
+  color-scheme: dark;
 }
 * { box-sizing: border-box; }
 html { padding: env(safe-area-inset-top, 0px) 0 env(safe-area-inset-bottom, 0px); background: var(--bg); }
@@ -69,7 +66,7 @@ input[type="time"] { font-family: var(--font-mono); }
 button { font: 600 15px var(--font-body); border-radius: 10px; border: 1px solid var(--line); background: var(--bg);
   color: var(--fg); padding: 11px 14px; cursor: pointer; }
 button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px solid var(--meter); outline-offset: 2px; }
-button.primary { background: var(--fg); color: var(--bg); border-color: var(--fg); flex: 1; padding: 14px; font-size: 16px; }
+button.primary { background: var(--panel); color: var(--fg); border-color: var(--fg); flex: 1; padding: 14px; font-size: 16px; }
 button.stop { background: var(--rec); color: #fff; border-color: var(--rec); }
 button:disabled { opacity: .45; cursor: default; }
 button.small { padding: 7px 10px; font-size: 13px; border-radius: 8px; }
@@ -84,6 +81,15 @@ button.small { padding: 7px 10px; font-size: 13px; border-radius: 8px; }
 .chip.rec { color: var(--rec); } .chip.rec2 { color: var(--warn); }
 audio { width: 100%; }
 .empty { color: var(--muted); font-size: 14px; }
+.headline { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; }
+.wake { font: 12px var(--font-mono); color: var(--muted); }
+.wake.on { color: var(--ok); } .wake.off { color: var(--warn); }
+#night { position: fixed; inset: 0; background: #000; z-index: 50; cursor: none; }
+#nightBox { position: absolute; left: 24px; top: 40%; color: var(--night-fg); transition: left 2s, top 2s; }
+#nightClock { font: 500 30px var(--font-mono); font-variant-numeric: tabular-nums; display: flex; align-items: center; gap: 10px; }
+#nightDot { width: 7px; height: 7px; border-radius: 50%; background: var(--night-rec); }
+#nightSub { font-size: 12px; color: var(--night-sub); margin-top: 4px; }
+@media (prefers-reduced-motion: reduce) { #nightBox { transition: none; } }
 .up { font-size: 13px; color: var(--muted); }
 .up.ok { color: var(--ok); } .up.bad { color: var(--warn); }
 .up a { color: inherit; }
@@ -101,7 +107,10 @@ audio { width: 100%; }
   </header>
 
   <section class="panel" aria-live="polite">
-    <span class="state" id="state" data-s="idle"><span class="dot"></span><span id="stateText">IDLE</span></span>
+    <div class="headline">
+      <span class="state" id="state" data-s="idle"><span class="dot"></span><span id="stateText">IDLE</span></span>
+      <span class="wake" id="wakeText"></span>
+    </div>
     <div class="window" id="windowText">--:-- <span class="arrow">→</span> --:--</div>
     <div class="sub" id="subText">시간 정하고 대기 시작 누르면 매일 그 시간에 녹음해.</div>
     <div class="meter" aria-label="입력 레벨">
@@ -167,6 +176,10 @@ audio { width: 100%; }
     <p class="note">녹음은 10초마다 폰 안에 저장돼서, 중간에 끊겨도 그때까지는 남아. 파일 앱으로 옮기려면 목록에서 저장 눌러.</p>
   </section>
 </main>
+
+<div id="night" hidden aria-label="야간 화면. 탭하면 돌아가.">
+  <div id="nightBox"><div id="nightClock"><span id="nightDot" hidden></span><span id="nightTime">--:--</span></div><div id="nightSub"></div></div>
+</div>
 
 <script>
 (() => {
@@ -262,7 +275,7 @@ audio { width: 100%; }
     cancelAnimationFrame(meterRaf);
     const buf = new Float32Array(2048);
     const loop = () => {
-      if (analyser) {
+      if (analyser && $("night").hidden) {
         analyser.getFloatTimeDomainData(buf);
         let peak = 0; for (let i = 0; i < buf.length; i++) peak = Math.max(peak, Math.abs(buf[i]));
         const db = peak > 0 ? 20 * Math.log10(peak) : -Infinity;
@@ -275,9 +288,12 @@ audio { width: 100%; }
   }
 
   // ---------- wake lock ----------
-  let wake = null;
+  let wake = null, wakeErr = "", lastWakeTry = 0;
   async function keepAwake() {
-    try { if ("wakeLock" in navigator && !wake) { wake = await navigator.wakeLock.request("screen"); wake.addEventListener("release", () => wake = null); } } catch (e) {}
+    lastWakeTry = Date.now();
+    if (!("wakeLock" in navigator)) { wakeErr = "미지원"; return; }
+    try { if (!wake) { wake = await navigator.wakeLock.request("screen"); wakeErr = ""; wake.addEventListener("release", () => { wake = null; }); } }
+    catch (e) { wakeErr = e && e.name === "NotAllowedError" ? "거부됨" : "실패"; }
   }
 
   // ---------- recorder ----------
@@ -351,10 +367,41 @@ audio { width: 100%; }
       if (armed) { setState("armed", "ARMED"); $("subText").textContent = `${dur(target.start - now)} 뒤 녹음 시작 · 매일 반복`; }
       else { setState("idle", "IDLE"); $("subText").textContent = "대기 시작을 눌러야 이 시간에 녹음돼."; }
     }
+    if ((armed || rec) && !wake && document.visibilityState === "visible" && now - lastWakeTry > 30000) keepAwake();
+    const wt = $("wakeText");
+    if (armed || rec) { wt.className = "wake " + (wake ? "on" : "off"); wt.textContent = wake ? "화면 유지 ON" : `화면 유지 OFF${wakeErr ? " (" + wakeErr + ")" : ""}`; }
+    else { wt.className = "wake"; wt.textContent = ""; }
+    night(now, n, w);
     $("armBtn").textContent = armed ? (rec ? "녹음 멈추고 저장" : "대기 해제") : "대기 시작";
     $("armBtn").classList.toggle("stop", !!rec);
     $("testBtn").disabled = !!rec;
   }
+  // ---------- night screen: black overlay with a small dim clock that drifts every minute (OLED burn-in) ----------
+  const IDLE_MS = 15000;
+  let lastTouch = Date.now(), lastMove = 0;
+  function night(now, n, w) {
+    const show = (armed || !!rec) && now - lastTouch > IDLE_MS;
+    const el = $("night");
+    if (el.hidden === show) { el.hidden = !show; lastMove = 0; }
+    if (!show) return;
+    $("nightTime").textContent = hm(now);
+    $("nightDot").hidden = !rec;
+    const target = (w && w.key !== doneKey) ? w : n;
+    let sub = rec && cur ? `녹음 중 · ${hm(cur.end)} 저장` : target ? `${hm(target.start)} 녹음 시작` : "";
+    if (!wake) sub += " · 화면 유지 OFF";
+    $("nightSub").textContent = sub;
+    if (now - lastMove > 60000) {
+      lastMove = now;
+      const box = $("nightBox"), W = innerWidth, H = innerHeight;
+      const x = 16 + Math.random() * Math.max(0, W - box.offsetWidth - 32);
+      const y = 40 + Math.random() * Math.max(0, H - box.offsetHeight - 80);
+      box.style.left = x + "px"; box.style.top = y + "px";
+    }
+  }
+  const touched = () => { lastTouch = Date.now(); };
+  ["pointerdown", "keydown", "touchstart"].forEach(ev => document.addEventListener(ev, touched, { capture: true, passive: true }));
+  $("night").addEventListener("click", (e) => { e.preventDefault(); e.stopPropagation(); touched(); $("night").hidden = true; tick(); });
+
   function setState(s, t) { $("state").dataset.s = s; $("stateText").textContent = t; }
   function showErr(msg) { $("errText").textContent = msg; $("errText").hidden = !msg; }
 
