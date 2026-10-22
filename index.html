@@ -1,0 +1,502 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#14161a">
+<title>예약 녹음기</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans+KR:wght@400;500;700&display=swap">
+<style>
+/* Layout: one narrow column, a big "next window" clock on top, controls, then the take list. */
+:root {
+  --bg: #f3f4f1;
+  --panel: #ffffff;
+  --line: #d9dcd4;
+  --fg: #1b1d1a;
+  --muted: #646a60;
+  --rec: #d23a2a;
+  --ok: #2f7d4f;
+  --warn: #a8670f;
+  --meter: #3e6f8f;
+  --font-body: "IBM Plex Sans KR", "Apple SD Gothic Neo", system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #14161a; --panel: #1d2026; --line: #30343c; --fg: #e9ebe6; --muted: #959b91;
+    --rec: #ff5a45; --ok: #5cc08a; --warn: #e3a64a; --meter: #79b2d6;
+    color-scheme: dark;
+  }
+}
+* { box-sizing: border-box; }
+html { padding: env(safe-area-inset-top, 0px) 0 env(safe-area-inset-bottom, 0px); background: var(--bg); }
+body {
+  margin: 0; background: var(--bg); color: var(--fg); font: 15px/1.55 var(--font-body);
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 20px 48px;
+}
+main { max-width: 520px; margin: 0 auto; display: flex; flex-direction: column; gap: 18px; }
+header { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
+h1 { font-size: 20px; margin: 0; font-weight: 700; }
+h2 { font-size: 13px; margin: 0 0 10px; font-weight: 600; letter-spacing: .06em; color: var(--muted); }
+.clock { font: 600 15px var(--font-mono); font-variant-numeric: tabular-nums; color: var(--muted); }
+.panel { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 16px; }
+.state { display: inline-flex; align-items: center; gap: 8px; font: 600 12px var(--font-mono); letter-spacing: .08em;
+  padding: 4px 10px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); }
+.state .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
+.state[data-s="armed"] { color: var(--ok); border-color: var(--ok); } .state[data-s="armed"] .dot { background: var(--ok); }
+.state[data-s="rec"] { color: var(--rec); border-color: var(--rec); } .state[data-s="rec"] .dot { background: var(--rec); animation: blink 1.2s infinite; }
+.state[data-s="err"] { color: var(--warn); border-color: var(--warn); } .state[data-s="err"] .dot { background: var(--warn); }
+@keyframes blink { 50% { opacity: .25; } }
+@media (prefers-reduced-motion: reduce) { .state .dot { animation: none !important; } }
+.window { font: 600 clamp(34px, 11vw, 48px)/1.1 var(--font-mono); font-variant-numeric: tabular-nums; margin: 12px 0 4px; }
+.window .arrow { color: var(--muted); font-weight: 400; }
+.sub { color: var(--muted); font-size: 14px; min-height: 1.55em; }
+.meter { margin-top: 14px; display: grid; grid-template-columns: 1fr auto; gap: 10px; align-items: center; }
+.bar { height: 8px; background: var(--line); border-radius: 4px; overflow: hidden; }
+.bar i { display: block; height: 100%; width: 0; background: var(--meter); transition: width .1s linear; }
+.db { font: 12px var(--font-mono); color: var(--muted); font-variant-numeric: tabular-nums; min-width: 6ch; text-align: right; }
+.row { display: flex; gap: 10px; flex-wrap: wrap; }
+.grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--muted); min-width: 0; }
+input, select { font: 16px var(--font-body); color: var(--fg); background: var(--bg); border: 1px solid var(--line);
+  border-radius: 8px; padding: 9px 10px; width: 100%; min-width: 0; }
+input[type="time"] { font-family: var(--font-mono); }
+button { font: 600 15px var(--font-body); border-radius: 10px; border: 1px solid var(--line); background: var(--bg);
+  color: var(--fg); padding: 11px 14px; cursor: pointer; }
+button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px solid var(--meter); outline-offset: 2px; }
+button.primary { background: var(--fg); color: var(--bg); border-color: var(--fg); flex: 1; padding: 14px; font-size: 16px; }
+button.stop { background: var(--rec); color: #fff; border-color: var(--rec); }
+button:disabled { opacity: .45; cursor: default; }
+button.small { padding: 7px 10px; font-size: 13px; border-radius: 8px; }
+.note { font-size: 13px; color: var(--muted); }
+.check { margin: 0; padding-left: 18px; font-size: 14px; display: flex; flex-direction: column; gap: 4px; }
+.takes { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.take { padding: 12px 0; border-top: 1px solid var(--line); display: flex; flex-direction: column; gap: 8px; }
+.take:first-child { border-top: 0; padding-top: 0; }
+.take .name { font: 600 14px var(--font-mono); word-break: break-all; }
+.take .meta { font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.chip { font: 600 11px var(--font-mono); padding: 2px 7px; border-radius: 999px; border: 1px solid currentColor; margin-left: 6px; }
+.chip.rec { color: var(--rec); } .chip.rec2 { color: var(--warn); }
+audio { width: 100%; }
+.empty { color: var(--muted); font-size: 14px; }
+.up { font-size: 13px; color: var(--muted); }
+.up.ok { color: var(--ok); } .up.bad { color: var(--warn); }
+.up a { color: inherit; }
+.toggle { flex-direction: row; align-items: center; gap: 8px; font-size: 14px; color: var(--fg); }
+.toggle input { width: auto; }
+.stack { display: flex; flex-direction: column; gap: 12px; }
+.err { color: var(--warn); font-size: 14px; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>예약 녹음기</h1>
+    <span class="clock" id="clock">--:--:--</span>
+  </header>
+
+  <section class="panel" aria-live="polite">
+    <span class="state" id="state" data-s="idle"><span class="dot"></span><span id="stateText">IDLE</span></span>
+    <div class="window" id="windowText">--:-- <span class="arrow">→</span> --:--</div>
+    <div class="sub" id="subText">시간 정하고 대기 시작 누르면 매일 그 시간에 녹음해.</div>
+    <div class="meter" aria-label="입력 레벨">
+      <div class="bar"><i id="meterBar"></i></div>
+      <span class="db" id="meterDb">— dB</span>
+    </div>
+  </section>
+
+  <div class="row">
+    <button class="primary" id="armBtn">대기 시작</button>
+    <button id="testBtn">1분 테스트</button>
+  </div>
+  <div class="err" id="errText" hidden></div>
+
+  <section class="panel">
+    <h2>매일 녹음 시간</h2>
+    <div class="grid">
+      <label for="startTime">시작<input type="time" id="startTime" value="03:00"></label>
+      <label for="endTime">끝 (자동 저장)<input type="time" id="endTime" value="07:00"></label>
+      <label for="quality">음질
+        <select id="quality">
+          <option value="64000">64k · 시간당 29MB</option>
+          <option value="128000" selected>128k · 시간당 58MB</option>
+          <option value="192000">192k · 시간당 86MB</option>
+        </select>
+      </label>
+      <label for="mode">입력 처리
+        <select id="mode">
+          <option value="raw" selected>원음 (보정 끔)</option>
+          <option value="voice">말소리 (잡음 제거)</option>
+        </select>
+      </label>
+    </div>
+    <p class="note">끝 시각이 시작보다 이르면 다음 날로 넘어가는 걸로 봐. 예: 23:30 → 06:00.</p>
+  </section>
+
+  <section class="panel">
+    <h2>구글 드라이브 자동 업로드</h2>
+    <div class="stack">
+      <label class="toggle" for="driveOn"><input type="checkbox" id="driveOn"> 녹음 끝나면 드라이브로 자동 업로드</label>
+      <label for="driveUrl">Apps Script 웹앱 URL<input type="url" id="driveUrl" placeholder="https://script.google.com/macros/s/…/exec" autocomplete="off"></label>
+      <label for="driveSecret">비밀값<input type="password" id="driveSecret" autocomplete="off"></label>
+      <div class="row"><button class="small" id="driveTest">연결 테스트</button><span class="up" id="driveTestText"></span></div>
+    </div>
+    <p class="note">8MB씩 나눠서 올리고, 와이파이가 끊겼다 돌아오면 이어서 올려. 업로드 끝난 파일도 폰 안 사본은 남아있어.</p>
+  </section>
+
+  <section class="panel">
+    <h2>녹음 파일</h2>
+    <ul class="takes" id="takes"><li class="empty">아직 녹음 없음.</li></ul>
+    <p class="note" id="storageText"></p>
+  </section>
+
+  <section class="panel">
+    <h2>밤새 켜둘 때</h2>
+    <ul class="check">
+      <li>충전기 꽂아두기</li>
+      <li>설정 → 디스플레이 및 밝기 → 자동 잠금 → 안 함</li>
+      <li>이 탭을 화면에 띄운 채로 두기 (다른 앱 가거나 잠그면 녹음이 멈춤)</li>
+      <li>Safari 주소창 aA → 웹사이트 설정 → 마이크 → 허용</li>
+      <li>방해 금지 켜두기 (전화가 오면 마이크가 끊길 수 있음)</li>
+    </ul>
+    <p class="note">녹음은 10초마다 폰 안에 저장돼서, 중간에 끊겨도 그때까지는 남아. 파일 앱으로 옮기려면 목록에서 저장 눌러.</p>
+  </section>
+</main>
+
+<script>
+(() => {
+  const $ = (id) => document.getElementById(id);
+  const pad = (n) => String(n).padStart(2, "0");
+  const hm = (t) => { const d = new Date(t); return pad(d.getHours()) + ":" + pad(d.getMinutes()); };
+  const ymd = (d) => d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate());
+  const dur = (ms) => { const s = Math.max(0, Math.round(ms / 1000)); const h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60);
+    return h ? `${h}시간 ${m}분` : m ? `${m}분 ${s % 60}초` : `${s % 60}초`; };
+  const mb = (b) => (b / 1048576).toFixed(1) + "MB";
+
+  // ---------- settings ----------
+  const LS = "rec-scheduler-settings";
+  const fields = ["startTime", "endTime", "quality", "mode", "driveUrl", "driveSecret", "driveOn"];
+  const val = (f) => $(f).type === "checkbox" ? $(f).checked : $(f).value;
+  try { const s = JSON.parse(localStorage.getItem(LS) || "{}"); fields.forEach(f => { if (s[f] === undefined) return; if ($(f).type === "checkbox") $(f).checked = !!s[f]; else $(f).value = s[f]; }); } catch (e) {}
+  const saveSettings = () => { try { const s = {}; fields.forEach(f => s[f] = val(f)); localStorage.setItem(LS, JSON.stringify(s)); } catch (e) {} };
+  fields.forEach(f => $(f).addEventListener("change", () => { saveSettings(); tick(); }));
+  const mins = (v) => { const [h, m] = v.split(":").map(Number); return h * 60 + m; };
+
+  // A window is [start, start+length) anchored on the day it starts.
+  function windowAt(now) {
+    const s = mins($("startTime").value), len = (mins($("endTime").value) - s + 1440) % 1440;
+    if (!len) return null;
+    for (const back of [0, 1]) {
+      const d = new Date(now); d.setDate(d.getDate() - back); d.setHours(Math.floor(s / 60), s % 60, 0, 0);
+      const st = d.getTime(), en = st + len * 60000;
+      if (now >= st && now < en) return { start: st, end: en, key: ymd(d) };
+    }
+    return null;
+  }
+  function nextWindow(now) {
+    const s = mins($("startTime").value), len = (mins($("endTime").value) - s + 1440) % 1440;
+    if (!len) return null;
+    const d = new Date(now); d.setHours(Math.floor(s / 60), s % 60, 0, 0);
+    if (d.getTime() <= now) d.setDate(d.getDate() + 1);
+    return { start: d.getTime(), end: d.getTime() + len * 60000 };
+  }
+
+  // ---------- IndexedDB: recs (one row per take) + chunks (10 s pieces) ----------
+  const reqP = (r) => new Promise((res, rej) => { r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); });
+  const dbp = new Promise((res, rej) => {
+    const r = indexedDB.open("rec-scheduler", 1);
+    r.onupgradeneeded = () => {
+      const d = r.result;
+      d.createObjectStore("recs", { keyPath: "id" });
+      d.createObjectStore("chunks", { autoIncrement: true }).createIndex("sid", "sid");
+    };
+    r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error);
+  });
+  const os = async (name, mode = "readonly") => (await dbp).transaction(name, mode).objectStore(name);
+  const putRec = async (r) => reqP((await os("recs", "readwrite")).put({ ...r }));
+  const allRecs = async () => (await reqP((await os("recs")).getAll())).sort((a, b) => b.startedAt - a.startedAt);
+  async function takeBlob(r) {
+    const rows = await reqP((await os("chunks")).index("sid").getAll(r.id));
+    rows.sort((a, b) => a.i - b.i);
+    return new Blob(rows.map(x => x.buf), { type: r.mime });
+  }
+  async function deleteTake(id) {
+    await reqP((await os("recs", "readwrite")).delete(id));
+    const s = await os("chunks", "readwrite");
+    await new Promise((res, rej) => {
+      const c = s.index("sid").openCursor(IDBKeyRange.only(id));
+      c.onsuccess = () => { const cur = c.result; if (cur) { cur.delete(); cur.continue(); } else res(); };
+      c.onerror = () => rej(c.error);
+    });
+  }
+
+  // ---------- mic + meter ----------
+  let stream = null, actx = null, analyser = null, meterRaf = 0;
+  const live = () => stream && stream.getAudioTracks().some(t => t.readyState === "live");
+  async function ensureStream() {
+    if (live()) return true;
+    const raw = $("mode").value === "raw";
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: !raw, noiseSuppression: !raw, autoGainControl: !raw } });
+    } catch (e) {
+      showErr("마이크를 못 켰어: " + (e && e.name === "NotAllowedError" ? "권한이 거부됨. Safari 웹사이트 설정에서 마이크를 허용해줘." : (e && e.message || e)));
+      return false;
+    }
+    stream.getAudioTracks().forEach(t => t.addEventListener("ended", () => { showErr("마이크 입력이 끊겼어. 다시 연결 시도할게."); if (rec) stopRec(false); }));
+    try {
+      actx = actx || new (window.AudioContext || window.webkitAudioContext)();
+      if (actx.state === "suspended") await actx.resume();
+      analyser = actx.createAnalyser(); analyser.fftSize = 2048;
+      actx.createMediaStreamSource(stream).connect(analyser);
+      runMeter();
+    } catch (e) {}
+    showErr("");
+    return true;
+  }
+  function runMeter() {
+    cancelAnimationFrame(meterRaf);
+    const buf = new Float32Array(2048);
+    const loop = () => {
+      if (analyser) {
+        analyser.getFloatTimeDomainData(buf);
+        let peak = 0; for (let i = 0; i < buf.length; i++) peak = Math.max(peak, Math.abs(buf[i]));
+        const db = peak > 0 ? 20 * Math.log10(peak) : -Infinity;
+        $("meterBar").style.width = Math.max(0, Math.min(100, (db + 60) / 60 * 100)) + "%";
+        $("meterDb").textContent = isFinite(db) ? db.toFixed(0) + " dB" : "-∞ dB";
+      }
+      meterRaf = requestAnimationFrame(loop);
+    };
+    loop();
+  }
+
+  // ---------- wake lock ----------
+  let wake = null;
+  async function keepAwake() {
+    try { if ("wakeLock" in navigator && !wake) { wake = await navigator.wakeLock.request("screen"); wake.addEventListener("release", () => wake = null); } } catch (e) {}
+  }
+
+  // ---------- recorder ----------
+  let rec = null, cur = null, armed = false, doneKey = null, starting = false, lastTry = 0;
+  function pickMime() {
+    if (!window.MediaRecorder) return null;
+    for (const m of ["audio/mp4;codecs=mp4a.40.2", "audio/mp4", "audio/webm;codecs=opus", "audio/webm"]) if (MediaRecorder.isTypeSupported(m)) return m;
+    return "";
+  }
+  async function startRec(end, key) {
+    if (rec || starting) return;
+    starting = true; lastTry = Date.now();
+    try { if (!(await ensureStream())) return; } finally { starting = false; }
+    if (rec) return;
+    const mime = pickMime();
+    if (mime === null) { showErr("이 브라우저는 MediaRecorder를 지원 안 해. iOS 14.5 이상 Safari에서 열어줘."); return; }
+    const opts = { audioBitsPerSecond: Number($("quality").value) }; if (mime) opts.mimeType = mime;
+    const r = new MediaRecorder(stream, opts);
+    const started = Date.now();
+    r.start(10000);
+    const type = r.mimeType || mime || "audio/mp4";
+    const ext = type.includes("webm") ? "webm" : "m4a";
+    const d = new Date(started);
+    const entry = { id: "r" + started, name: `녹음_${ymd(d)}_${pad(d.getHours())}${pad(d.getMinutes())}.${ext}`,
+      startedAt: started, plannedEnd: end, endedAt: null, mime: type, bytes: 0, status: "recording" };
+    let i = 0, chain = putRec(entry);
+    r.ondataavailable = (e) => {
+      if (!e.data || !e.data.size) return;
+      const idx = i++, blob = e.data;
+      chain = chain.then(async () => {
+        const buf = await blob.arrayBuffer();
+        await reqP((await os("chunks", "readwrite")).add({ sid: entry.id, i: idx, buf, t: Date.now() }));
+        entry.bytes += buf.byteLength; entry.lastAt = Date.now();
+        await putRec(entry);
+      }).catch(err => showErr("저장 중 오류: " + (err && err.message || err)));
+    };
+    r.onstop = () => {
+      chain = chain.then(async () => { entry.endedAt = Date.now(); entry.status = "done"; await putRec(entry); await renderTakes(); uploadPending(); });
+    };
+    rec = r; cur = { entry, end, key };
+    renderTakes(); tick();
+  }
+  function stopRec(finished) {
+    if (!rec) return;
+    if (finished && cur) doneKey = cur.key;
+    try { if (rec.state !== "inactive") rec.stop(); } catch (e) {}
+    rec = null; cur = null; tick();
+  }
+
+  // ---------- loop ----------
+  function tick() {
+    const now = Date.now();
+    $("clock").textContent = new Date(now).toTimeString().slice(0, 8);
+    if (cur && now >= cur.end) stopRec(true);
+    const w = windowAt(now);
+    if (armed && !rec && !starting && w && w.key !== doneKey && now - lastTry > 10000) startRec(w.end, w.key);
+
+    if (!uploading && $("driveOn").checked && now - lastUploadTry > 120000) uploadPending();
+    const n = nextWindow(now);
+    if (rec && cur) {
+      setState("rec", "REC");
+      $("windowText").innerHTML = `${hm(cur.entry.startedAt)} <span class="arrow">→</span> ${hm(cur.end)}`;
+      $("subText").textContent = `녹음 중 ${dur(now - cur.entry.startedAt)} · ${dur(cur.end - now)} 뒤 자동 저장`;
+    } else if (!n) {
+      setState("err", "CHECK");
+      $("windowText").innerHTML = `--:-- <span class="arrow">→</span> --:--`;
+      $("subText").textContent = "시작과 끝이 같아. 다른 시각으로 정해줘.";
+    } else {
+      const target = (w && w.key !== doneKey) ? w : n;
+      $("windowText").innerHTML = `${hm(target.start)} <span class="arrow">→</span> ${hm(target.end)}`;
+      if (armed) { setState("armed", "ARMED"); $("subText").textContent = `${dur(target.start - now)} 뒤 녹음 시작 · 매일 반복`; }
+      else { setState("idle", "IDLE"); $("subText").textContent = "대기 시작을 눌러야 이 시간에 녹음돼."; }
+    }
+    $("armBtn").textContent = armed ? (rec ? "녹음 멈추고 저장" : "대기 해제") : "대기 시작";
+    $("armBtn").classList.toggle("stop", !!rec);
+    $("testBtn").disabled = !!rec;
+  }
+  function setState(s, t) { $("state").dataset.s = s; $("stateText").textContent = t; }
+  function showErr(msg) { $("errText").textContent = msg; $("errText").hidden = !msg; }
+
+  $("armBtn").addEventListener("click", async () => {
+    if (rec) { stopRec(true); return; }
+    if (armed) { armed = false; tick(); return; }
+    if (!(await ensureStream())) return;
+    armed = true; keepAwake();
+    try { navigator.storage && navigator.storage.persist && navigator.storage.persist(); } catch (e) {}
+    tick();
+  });
+  $("testBtn").addEventListener("click", async () => {
+    if (!(await ensureStream())) return;
+    keepAwake();
+    startRec(Date.now() + 60000, "test-" + Date.now());
+  });
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") { if (armed || rec) keepAwake(); if (actx && actx.state === "suspended") actx.resume().catch(() => {}); tick(); }
+  });
+  window.addEventListener("beforeunload", (e) => { if (rec) { e.preventDefault(); e.returnValue = ""; } });
+
+  // ---------- Google Drive upload (via Apps Script relay) ----------
+  const SLICE = 8 * 1024 * 1024; // multiple of 256 KiB, as Drive resumable upload needs
+  let uploading = false, lastUploadTry = 0;
+  async function gas(body) {
+    const url = $("driveUrl").value.trim();
+    if (!/^https:\/\/script\.google(usercontent)?\.com\//.test(url)) throw new Error("Apps Script URL을 넣어줘");
+    const r = await fetch(url, { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" },
+      body: JSON.stringify({ ...body, secret: $("driveSecret").value }), redirect: "follow" });
+    let j; try { j = await r.json(); } catch (e) { throw new Error("응답이 이상해 (HTTP " + r.status + "). 웹앱 접근 권한을 '모든 사용자'로 배포했는지 확인해줘"); }
+    if (!j.ok) throw new Error(j.error || "실패");
+    return j;
+  }
+  const b64 = (blob) => new Promise((res, rej) => {
+    const fr = new FileReader(); fr.onload = () => res(String(fr.result).split(",")[1] || ""); fr.onerror = () => rej(fr.error); fr.readAsDataURL(blob);
+  });
+  function upText(el, r) {
+    const d = r.drive || {};
+    el.className = "up"; el.textContent = "";
+    if (d.done) { el.classList.add("ok"); el.append("드라이브 저장됨 · "); const a = document.createElement("a"); a.href = d.url; a.target = "_blank"; a.rel = "noopener"; a.textContent = "열기"; el.append(a); }
+    else if (d.error) { el.classList.add("bad"); el.textContent = "드라이브 업로드 실패: " + d.error + " (2분 뒤 다시 시도)"; }
+    else if (d.session) el.textContent = `드라이브 업로드 중 ${r.bytes ? Math.round(d.offset / r.bytes * 100) : 0}%`;
+    else el.textContent = "드라이브 업로드 대기";
+  }
+  function showUp(r) { const el = document.querySelector(`.take[data-id="${r.id}"] .up`); if (el) upText(el, r); }
+  async function uploadTake(r) {
+    const blob = await takeBlob(r);
+    r.drive = r.drive || {};
+    if (r.drive.session) {
+      const s = await gas({ action: "status", session: r.drive.session });
+      if (s.done) { Object.assign(r.drive, { done: true, url: s.url, error: null }); await putRec(r); showUp(r); return; }
+      if (s.expired) r.drive.session = null; else r.drive.offset = s.next;
+    }
+    if (!r.drive.session) { r.drive.session = (await gas({ action: "start", name: r.name, mime: r.mime })).session; r.drive.offset = 0; }
+    r.drive.error = null; await putRec(r); showUp(r);
+    for (;;) {
+      const off = r.drive.offset, end = Math.min(off + SLICE, blob.size), final = end >= blob.size;
+      const res = await gas({ action: "chunk", session: r.drive.session, offset: off, final, mime: r.mime, data: await b64(blob.slice(off, end)) });
+      if (res.expired) { r.drive.session = null; await putRec(r); throw new Error("업로드 세션 만료, 처음부터 다시 올릴게"); }
+      if (res.done) { Object.assign(r.drive, { done: true, url: res.url, offset: blob.size }); await putRec(r); showUp(r); return; }
+      r.drive.offset = res.next; await putRec(r); showUp(r);
+    }
+  }
+  async function uploadPending() {
+    if (uploading || !$("driveOn").checked || !$("driveUrl").value.trim()) return;
+    uploading = true; lastUploadTry = Date.now();
+    try {
+      for (const r of await allRecs()) {
+        if (r.status === "recording" || (r.drive && r.drive.done) || !r.bytes) continue;
+        try { await uploadTake(r); }
+        catch (e) { r.drive = r.drive || {}; r.drive.error = e.message || String(e); await putRec(r); showUp(r); }
+      }
+    } finally { uploading = false; }
+  }
+  $("driveTest").addEventListener("click", async () => {
+    saveSettings(); $("driveTestText").className = "up"; $("driveTestText").textContent = "확인 중…";
+    try { const j = await gas({ action: "ping" }); $("driveTestText").classList.add("ok"); $("driveTestText").textContent = "연결됨 · 드라이브 폴더 준비 완료"; uploadPending(); }
+    catch (e) { $("driveTestText").classList.add("bad"); $("driveTestText").textContent = e.message; }
+  });
+  $("driveOn").addEventListener("change", () => { renderTakes(); lastUploadTry = 0; });
+  window.addEventListener("online", () => { lastUploadTry = 0; uploadPending(); });
+
+  // ---------- take list ----------
+  const blobUrls = {};
+  async function renderTakes() {
+    let recs; try { recs = await allRecs(); } catch (e) { showErr("저장소를 못 열었어: " + e.message); return; }
+    const ul = $("takes"); ul.textContent = "";
+    if (!recs.length) { const li = document.createElement("li"); li.className = "empty"; li.textContent = "아직 녹음 없음."; ul.append(li); }
+    for (const r of recs) {
+      const li = document.createElement("li"); li.className = "take"; li.dataset.id = r.id;
+      const isLive = cur && cur.entry.id === r.id;
+      const name = document.createElement("div"); name.className = "name"; name.textContent = r.name;
+      if (isLive) { const c = document.createElement("span"); c.className = "chip rec"; c.textContent = "REC"; name.append(c); }
+      else if (r.status === "recovered") { const c = document.createElement("span"); c.className = "chip rec2"; c.textContent = "중간에 끊김"; name.append(c); }
+      const meta = document.createElement("div"); meta.className = "meta";
+      const end = r.endedAt || r.lastAt || Date.now();
+      meta.textContent = `${ymd(new Date(r.startedAt))} ${hm(r.startedAt)}–${hm(end)} · ${dur(end - r.startedAt)} · ${mb(r.bytes || 0)}`;
+      li.append(name, meta);
+      if (!isLive && $("driveOn").checked) {
+        const up = document.createElement("div"); up.className = "up"; li.append(up);
+        upText(up, r);
+      }
+      if (!isLive) {
+        const row = document.createElement("div"); row.className = "row";
+        const play = document.createElement("button"); play.className = "small"; play.textContent = "듣기";
+        const save = document.createElement("button"); save.className = "small"; save.textContent = "파일로 저장";
+        const del = document.createElement("button"); del.className = "small"; del.textContent = "삭제";
+        let file = null;
+        const getFile = async () => file || (file = new File([await takeBlob(r)], r.name, { type: r.mime }));
+        play.onclick = async () => {
+          const f = await getFile(); const a = document.createElement("audio"); a.controls = true;
+          blobUrls[r.id] = blobUrls[r.id] || URL.createObjectURL(f); a.src = blobUrls[r.id]; play.replaceWith(a); a.play().catch(() => {});
+        };
+        save.onclick = async () => {
+          const f = await getFile();
+          if (navigator.canShare && navigator.canShare({ files: [f] })) {
+            try { await navigator.share({ files: [f], title: r.name }); save.textContent = "파일로 저장"; }
+            catch (e) { if (e.name === "NotAllowedError") save.textContent = "한 번 더 눌러 저장"; }
+          } else {
+            const a = document.createElement("a"); a.href = blobUrls[r.id] = blobUrls[r.id] || URL.createObjectURL(f); a.download = r.name; document.body.append(a); a.click(); a.remove();
+          }
+        };
+        let armedDel = 0;
+        del.onclick = async () => {
+          if (Date.now() - armedDel > 3000) { armedDel = Date.now(); del.textContent = "정말 삭제?"; setTimeout(() => { del.textContent = "삭제"; }, 3000); return; }
+          await deleteTake(r.id); renderTakes();
+        };
+        row.append(play, save, del); li.append(row);
+      }
+      ul.append(li);
+    }
+    try { const est = await navigator.storage.estimate(); $("storageText").textContent = `이 페이지가 쓰는 공간 ${mb(est.usage || 0)}`; } catch (e) {}
+  }
+
+  // Takes left in "recording" from a previous page load were cut off (tab closed, phone locked).
+  (async () => {
+    try { for (const r of await allRecs()) if (r.status === "recording") { r.status = "recovered"; r.endedAt = r.lastAt || r.startedAt; await putRec(r); } } catch (e) {}
+    renderTakes();
+  })();
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) showErr("여기선 마이크를 못 써. https 주소로 Safari에서 열어줘.");
+  setInterval(tick, 1000); tick();
+})();
+</script>
+</body>
+</html>
